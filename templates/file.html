@@ -30,7 +30,6 @@
     <button onclick="applySearch()">Search</button>
   </div>
 </header>
-
 <div id="stats" style="padding:0.8rem;"></div>
 <div class="grid" id="grid"></div>
 <div class="toolbar">
@@ -67,7 +66,7 @@ function renderPage(p){
     grid.appendChild(card);
   }
   const pages=Math.ceil(filtered.length/size);
-  let pagetext=`Page ${p+1}/${pages} `;
+  let pagetext=`Page ${p+1} / ${pages} `;
   if(p>0) pagetext+=`<a href="#" onclick="renderPage(${p-1})">« Prev</a> `;
   if(p<pages-1) pagetext+=`<a href="#" onclick="renderPage(${p+1})">Next »</a>`;
   document.getElementById('pagination').innerHTML=pagetext;
@@ -89,7 +88,7 @@ function renderRecord(i,rec){
   else if(rec.content) text=rec.content;
   else if(rec.user) text=rec.user;
   else if(rec.assistant) text=rec.assistant;
-  else if(rec.input||rec.output) text=`IN:\n${rec.input}\n\nOUT:\n${rec.output}`;
+  else if(rec.input||rec.output) text=`IN:\\n${rec.input}\\n\\nOUT:\\n${rec.output}`;
   else text=JSON.stringify(rec,null,2);
   return `<div class='meta'>#${i} ${role||''}</div><div>${escapeHTML(text)}</div>`;
 }
@@ -111,3 +110,4 @@ load();
 </script>
 </body>
 </html>
+

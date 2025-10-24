@@ -33,8 +33,7 @@
 <script>
 async function fetchFiles() {
   const res = await fetch('/api/files');
-  const files = await res.json();
-  return files;
+  return await res.json();
 }
 
 function buildTree(paths) {
@@ -60,11 +59,7 @@ function createTreeElement(node, pathPrefix = '') {
       li.className = 'file';
       const link = document.createElement('a');
       link.textContent = key;
-      link.href = '#';
-      link.onclick = (e) => {
-        e.preventDefault();
-        loadFile(fullPath);
-      };
+      link.href = `/view/${encodeURIComponent(fullPath)}`;   // <— navigate to view page
       li.appendChild(link);
     } else {
       li.className = 'folder';
@@ -79,19 +74,6 @@ function createTreeElement(node, pathPrefix = '') {
     ul.appendChild(li);
   }
   return ul;
-}
-
-async function loadFile(path) {
-  document.getElementById('info').textContent = `Loading ${path}...`;
-  document.getElementById('content').textContent = '';
-  const res = await fetch(`/api/read?name=${encodeURIComponent(path)}`);
-  if (!res.ok) {
-    document.getElementById('info').textContent = `Error loading ${path}`;
-    return;
-  }
-  const data = await res.json();
-  document.getElementById('info').innerHTML = `<b>${path}</b> — ${data.length} records`;
-  document.getElementById('content').textContent = JSON.stringify(data.slice(0, 50), null, 2);
 }
 
 (async function init() {
