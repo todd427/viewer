@@ -1,21 +1,115 @@
-<!doctype html>
-<html><head>
-  <meta charset="utf-8"/><title>{{request.app.title}}</title>
-  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-  <link rel="stylesheet" href="/static/style.css">
-</head><body>
-  <header><h1>JSONL Editor</h1><span class="muted">Data dir: {{data_dir}}</span></header>
-  <aside>
-    <h3>Files</h3>
-    <ul>
-      {% for f in files %}
-      <li><a href="/file/{{f}}">{{f}}</a></li>
-      {% else %}
-      <li class="muted">No *.jsonl files found</li>
-      {% endfor %}
-    </ul>
-  </aside>
-  <main>
-    <p>Select a file to view records.</p>
-  </main>
-</body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>JSONL Editor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: system-ui, -apple-system, Roboto, sans-serif; margin: 0; background: #0b0d10; color: #e6e6e6; display: flex; height: 100vh; }
+    #sidebar { width: 320px; background: #111419; border-right: 1px solid #222; overflow-y: auto; padding: 0.8rem; }
+    #main { flex: 1; padding: 1rem; overflow-y: auto; }
+    h1 { font-size: 1.1rem; font-weight: 600; margin: 0 0 1rem 0; }
+    ul { list-style: none; padding-left: 1rem; }
+    li { line-height: 1.5em; cursor: pointer; }
+    li.folder::before { content: "▸"; display: inline-block; width: 1.2em; color: #888; }
+    li.folder.open::before { content: "▾"; }
+    li.file::before { content: "📄"; display: inline-block; width: 1.2em; }
+    a { color: #8fd0ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    pre { background: #101317; padding: 1rem; border-radius: 8px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <h1>Files</h1>
+    <div id="fileTree">Loading...</div>
+  </div>
+  <div id="main">
+    <h1>JSONL Editor</h1>
+    <div id="info">Select a file to view records.</div>
+    <pre id="content"></pre>
+  </div>
+
+<script>
+async function fetchFiles() {
+  const res = await fetch('/api/files');
+  const files = await res.json();
+  return files;
+}
+
+function buildTree(paths) {
+  const root = {};
+  for (const path of paths) {
+    const parts = path.split('/');
+    let node = root;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      node[part] = node[part] || (i === parts.length - 1 ? null : {});
+      node = node[part];
+    }
+  }
+  return root;
+}
+
+function createTreeElement(node, pathPrefix = '') {
+  const ul = document.createElement('ul');
+  for (const key of Object.keys(node).sort()) {
+    const li = document.createElement('li');
+    const fullPath = pathPrefix ? `${pathPrefix}/${key}` : key;
+    if (node[key] === null) {
+      li.className = 'file';
+      const link = document.createElement('a');
+      link.textContent = key;
+      link.href = '#';
+      link.onclick = (e) => {
+        e.preventDefault();
+        loadFile(fullPath);
+      };
+      li.appendChild(link);
+    } else {
+      li.className = 'folder';
+      li.textContent = key;
+      li.onclick = (e) => {
+        e.stopPropagation();
+        li.classList.toggle('open');
+        const childUl = li.querySelector('ul');
+        if (!childUl) li.appendChild(createTreeElement(node[key], fullPath));
+      };
+    }
+    ul.appendChild(li);
+  }
+  return ul;
+}
+
+async function loadFile(path) {
+  document.getElementById('info').textContent = `Loading ${path}...`;
+  document.getElementById('content').textContent = '';
+  const res = await fetch(`/api/read?name=${encodeURIComponent(path)}`);
+  if (!res.ok) {
+    document.getElementById('info').textContent = `Error loading ${path}`;
+    return;
+  }
+  const data = await res.json();
+  document.getElementById('info').innerHTML = `<b>${path}</b> — ${data.length} records`;
+  document.getElementById('content').textContent = JSON.stringify(data.slice(0, 50), null, 2);
+}
+
+(async function init() {
+  try {
+    const files = await fetchFiles();
+    if (!files.length) {
+      document.getElementById('fileTree').textContent = 'No .jsonl files found.';
+      return;
+    }
+    const tree = buildTree(files);
+    const treeEl = createTreeElement(tree);
+    document.getElementById('fileTree').innerHTML = '';
+    document.getElementById('fileTree').appendChild(treeEl);
+  } catch (err) {
+    document.getElementById('fileTree').textContent = 'Error loading file list.';
+    console.error(err);
+  }
+})();
+</script>
+</body>
+</html>
