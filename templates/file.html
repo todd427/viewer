@@ -1,62 +1,113 @@
-<!doctype html>
-<html><head>
-  <meta charset="utf-8"/><title>{{name}} — JSONL</title>
-  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-  <link rel="stylesheet" href="/static/style.css">
-</head><body>
-  <header class="row">
-    <h1>{{name}}</h1>
-    <nav><a href="/">← files</a></nav>
-    <form method="get" action="/file/{{name}}" class="search">
-      <input type="hidden" name="size" value="{{size}}">
-      <input name="q" value="{{q}}" placeholder="search text or regex">
-      <label title="use Python-style regex"><input type="checkbox" name="regex" value="true" {% if regex %}checked{% endif %}> regex</label>
-      <button>Search</button>
-    </form>
-  </header>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ name }}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font-family: system-ui, -apple-system, Roboto, sans-serif; background:#0b0d10; color:#e6e6e6; margin:0; }
+  header { display:flex; justify-content:space-between; align-items:center; padding:1rem; background:#111419; border-bottom:1px solid #222; }
+  a { color:#8fd0ff; text-decoration:none; } a:hover{text-decoration:underline;}
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:1rem; padding:1rem;}
+  .card { border-radius:10px; padding:0.8rem; background:#151a20; border:1px solid #222; box-shadow:0 1px 2px #0006; white-space:pre-wrap; }
+  .user { background:#0d2340; border-left:3px solid #4fa3ff;}
+  .assistant { background:#052a20; border-left:3px solid #00d67a;}
+  .unknown { background:#201010; border-left:3px solid #cc4444;}
+  .meta { font-size:0.8em; color:#aaa; margin-bottom:0.3em;}
+  input[type="text"]{width:280px;background:#000;color:#eee;border:1px solid #333;border-radius:4px;padding:0.4rem;}
+  label{color:#aaa;font-size:0.85em;}
+  .toolbar{padding:0.5rem;text-align:center;background:#111;border-top:1px solid #222;}
+  .toolbar select{background:#000;color:#fff;border:1px solid #333;border-radius:4px;padding:0.2rem;}
+</style>
+</head>
+<body>
+<header>
+  <div><a href="/">← files</a></div>
+  <div><strong>{{ name }}</strong></div>
+  <div>
+    <label><input type="checkbox" id="regex"> regex</label>
+    <input type="text" id="search" placeholder="search text or regex">
+    <button onclick="applySearch()">Search</button>
+  </div>
+</header>
 
-  <section class="pager">
-    <span>Total: {{total}}</span>
-    <span>Page:
-      {% if page>1 %}
-      <a href="/file/{{name}}?page={{page-1}}&size={{size}}&q={{q}}&regex={{regex}}">« Prev</a>
-      {% endif %}
-      <b>{{page}}</b>
-      {% if page*size < total %}
-      <a href="/file/{{name}}?page={{page+1}}&size={{size}}&q={{q}}&regex={{regex}}">Next »</a>
-      {% endif %}
-    </span>
-    <span>Size:
-      <a href="/file/{{name}}?page=1&size=10&q={{q}}&regex={{regex}}">10</a> |
-      <a href="/file/{{name}}?page=1&size=20&q={{q}}&regex={{regex}}">20</a> |
-      <a href="/file/{{name}}?page=1&size=50&q={{q}}&regex={{regex}}">50</a>
-    </span>
-  </section>
+<div id="stats" style="padding:0.8rem;"></div>
+<div class="grid" id="grid"></div>
+<div class="toolbar">
+  <span id="pagination"></span>
+  <select id="pageSize" onchange="renderPage(0)">
+    <option>10</option><option>20</option><option selected>50</option><option>100</option>
+  </select> per page
+</div>
 
-  <section class="records">
-    {% for item in previews %}
-    <article class="card">
-      <header>#{{item.idx}}
-        <button hx-get="/api/get_record?name={{name}}&idx={{item.idx}}"
-                hx-target="#editor"
-                hx-swap="innerHTML">Edit</button>
-        <form hx-post="/api/delete_record" hx-vals='{"name":"{{name}}","idx":"{{item.idx}}"}'
-              hx-confirm="Delete this record?" hx-target="closest article" hx-swap="outerHTML">
-          <button class="danger">Delete</button>
-        </form>
-      </header>
-      {{item.preview|safe}}
-    </article>
-    {% endfor %}
-  </section>
+<script>
+const name = {{ name | tojson }};
+let rows=[],filtered=[],page=0;
 
-  <section id="editor" class="editor">
-    <h3>Add / Edit</h3>
-    <form hx-post="/api/add_record" hx-target="#status" hx-swap="innerHTML">
-      <input type="hidden" name="name" value="{{name}}">
-      <textarea name="payload" rows="12" spellcheck="false">{"messages":[{"role":"system","content":"Be concise."},{"role":"user","content":"Prompt here"},{"role":"assistant","content":"Answer here"}]}</textarea>
-      <button>Add Record</button>
-    </form>
-    <div id="status"></div>
-  </section>
-</body></html>
+async function load(){
+  const res=await fetch(`/api/read?name=${encodeURIComponent(name)}`);
+  rows=await res.json();
+  filtered=rows;
+  document.getElementById('stats').innerHTML=`Total: ${rows.length} records`;
+  renderPage(0);
+}
+
+function renderPage(p){
+  page=p;
+  const size=parseInt(document.getElementById('pageSize').value);
+  const start=p*size,end=start+size;
+  const slice=filtered.slice(start,end);
+  const grid=document.getElementById('grid');
+  grid.innerHTML='';
+  for(let i=0;i<slice.length;i++){
+    const rec=slice[i];
+    const card=document.createElement('div');
+    card.className='card '+getRoleClass(rec);
+    card.innerHTML=renderRecord(start+i,rec);
+    grid.appendChild(card);
+  }
+  const pages=Math.ceil(filtered.length/size);
+  let pagetext=`Page ${p+1}/${pages} `;
+  if(p>0) pagetext+=`<a href="#" onclick="renderPage(${p-1})">« Prev</a> `;
+  if(p<pages-1) pagetext+=`<a href="#" onclick="renderPage(${p+1})">Next »</a>`;
+  document.getElementById('pagination').innerHTML=pagetext;
+}
+
+function getRoleClass(rec){
+  const r=(rec.role||'').toLowerCase();
+  if(r.includes('user'))return'user';
+  if(r.includes('assistant')||r.includes('system'))return'assistant';
+  if(rec.user)return'user';
+  if(rec.assistant||rec.output)return'assistant';
+  return'unknown';
+}
+
+function renderRecord(i,rec){
+  const role=(rec.role||'').toUpperCase();
+  let text='';
+  if(rec.text) text=rec.text;
+  else if(rec.content) text=rec.content;
+  else if(rec.user) text=rec.user;
+  else if(rec.assistant) text=rec.assistant;
+  else if(rec.input||rec.output) text=`IN:\n${rec.input}\n\nOUT:\n${rec.output}`;
+  else text=JSON.stringify(rec,null,2);
+  return `<div class='meta'>#${i} ${role||''}</div><div>${escapeHTML(text)}</div>`;
+}
+
+function escapeHTML(s){return s?s.toString().replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])):'';}
+
+function applySearch(){
+  const text=document.getElementById('search').value.trim();
+  const regexMode=document.getElementById('regex').checked;
+  if(!text){filtered=rows;renderPage(0);return;}
+  try{
+    const re=regexMode?new RegExp(text,'i'):new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i');
+    filtered=rows.filter(r=>JSON.stringify(r).match(re));
+    document.getElementById('stats').innerHTML=`Filtered: ${filtered.length}/${rows.length}`;
+    renderPage(0);
+  }catch(err){alert("Invalid regex: "+err.message);}
+}
+load();
+</script>
+</body>
+</html>

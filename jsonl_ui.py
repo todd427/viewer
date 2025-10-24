@@ -153,8 +153,6 @@ async def view_file(request: Request, path: str):
     fpath = Path(path)
     if not fpath.exists():
         return HTMLResponse(f"<h1>File not found:</h1><pre>{path}</pre>", status_code=404)
-    rows = read_jsonl(fpath)
-    pretty = json.dumps(rows[:100], indent=2, ensure_ascii=False)
     template = env.get_template("file.html")
     return template.render(request=request, name=path, rows_preview=pretty)
 
