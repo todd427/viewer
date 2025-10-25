@@ -6,7 +6,7 @@ Restored JSONL Viewer/Editor — full traversal, schema inference, working templ
 import os
 import json
 from pathlib import Path
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
@@ -167,6 +167,52 @@ def download(path: str):
     if not fpath.exists():
         return JSONResponse({"error": "File not found"}, status_code=404)
     return FileResponse(fpath)
+
+
+@app.get("/api/schema")
+async def get_schema(name: str = Query(...)):
+    import json
+    from collections import Counter, defaultdict
+    from pathlib import Path
+
+    # Normalize absolute path
+    if not name.startswith("/"):
+        name = "/" + name
+
+    file_path = Path(name)
+    if not file_path.exists():
+        return {"error": f"File not found: {name}"}
+
+    type_map = defaultdict(Counter)
+    total = 0
+
+    # Read only a limited number of lines
+    with open(file_path, "r", encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            if not line.strip():
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            total += 1
+            for key, val in obj.items():
+                t = type(val).__name__
+                type_map[key][t] += 1
+            if i >= 20:
+                break
+
+    # Summarize
+    schema = []
+    for key, counts in type_map.items():
+        schema.append({
+            "key": key,
+            "types": dict(counts),
+            "coverage": round(sum(counts.values()) / total * 100, 1),
+        })
+
+    return {"records_scanned": total, "schema": schema}
+
 
 
 # --- STATIC -------------------------------------------------------------------

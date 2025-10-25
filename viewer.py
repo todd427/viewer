@@ -1,227 +1,176 @@
-#!/usr/bin/env python3
-"""
-Restored JSONL Viewer/Editor — full traversal, schema inference, working templates.
-"""
-
-import os
-import json
-from pathlib import Path
-from fastapi import FastAPI, Request, Query
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from jinja2 import Environment, FileSystemLoader
-from jsonschema import validate as js_validate, ValidationError
+from pathlib import Path
+import json
 
-BASE_DIR = Path(__file__).resolve().parent
-TEMPLATES_DIR = BASE_DIR / "templates"
-STATIC_DIR = BASE_DIR / "static"
+app = FastAPI()
+BASE_DIR = Path.home()
+templates = Jinja2Templates(directory="templates")
 
-ROOT_DIRS = ["/"]
-SKIP_DIRS = {
-    "/proc", "/sys", "/dev", "/run", "/snap", "/tmp",
-    "/.Trash", "/lost+found", "/var/lib/docker"
-}
-
-app = FastAPI(title="JSONL Viewer/Editor")
-env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)))
-env.cache = {}
+# Mount static directory if you decide to add custom CSS or JS
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
-
-# --- UTILITIES ----------------------------------------------------------------
-def list_jsonl_files() -> list[Path]:
-    files = []
-    for root in ROOT_DIRS:
-        for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
-            dirnames[:] = [
-                d for d in dirnames
-                if not any((Path(dirpath) / d).as_posix().startswith(sd) for sd in SKIP_DIRS)
-            ]
-            for f in filenames:
-                if f.endswith(".jsonl"):
-                    p = Path(dirpath) / f
-                    try:
-                        if p.is_file():
-                            files.append(p)
-                    except (PermissionError, OSError):
-                        continue
-    return sorted(files)
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    """Home route showing all files."""
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
-def read_jsonl(path: Path) -> list:
-    rows = []
+@app.get("/api/files")
+async def list_files():
+    """List JSON/JSONL files recursively under ~/Projects."""
+    project_root = BASE_DIR / "Projects"
+    results = []
+    for path in project_root.rglob("*.json*"):
+        try:
+            rel = path.relative_to(BASE_DIR)
+        except ValueError:
+            rel = path
+        results.append(str(rel))
+    return JSONResponse(results)
+
+
+def load_jsonl(path: Path, limit: int = 100):
+    """Load a JSONL file safely (absolute path enforced)."""
+    if not path.is_absolute():
+        path = Path("/") / path  # ensure leading slash
+    lines = []
     try:
         with open(path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
+            for i, line in enumerate(f):
+                if line.strip():
                     try:
-                        rows.append(json.loads(line))
-                    except json.JSONDecodeError as e:
-                        rows.append({"_error": str(e), "_raw": line})
-    except (FileNotFoundError, PermissionError) as e:
-        rows.append({"_error": str(e)})
-    return rows
-
-
-def infer_schema(rows):
-    if not rows:
-        return {"type": "object"}
-    sample = rows[0]
-    if isinstance(sample, dict):
-        props = {k: {"type": type(v).__name__} for k, v in sample.items()}
-        return {"type": "object", "properties": props}
-    elif isinstance(sample, list):
-        return {"type": "array"}
-    return {"type": type(sample).__name__}
-
-
-# --- ROUTES -------------------------------------------------------------------
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    files = [str(p) for p in list_jsonl_files()]
-    template = env.get_template("index.html")
-    return template.render(request=request, files=files)
+                        lines.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        lines.append({"raw": line.strip()})
+                if i >= limit:
+                    break
+    except FileNotFoundError:
+        return None
+    return lines
 
 
 @app.get("/view/{path:path}", response_class=HTMLResponse)
 async def view_file(request: Request, path: str):
-    """Serve the grid view template directly."""
-    # Normalize to absolute path
+    """Render the file viewer page for the selected JSONL."""
+    # Guarantee leading slash for full absolute path
     if not path.startswith("/"):
         path = "/" + path
-
     fpath = Path(path)
+    print(f">> view_file: {fpath}")
 
-    if not fpath.exists():
-        return HTMLResponse(f"<h1>File not found:</h1><pre>{path}</pre>", status_code=404)
-    template = env.get_template("file.html")
-
-    return template.render(request=request, name=str(fpath))
-
-
-@app.get("/api/files")
-def api_files():
-    files = []
-    for p in list_jsonl_files():
-        full = p.as_posix()
-        if not full.startswith("/"):
-            full = "/" + full
-        files.append(full)
-    return JSONResponse(files)
+    lines = load_jsonl(fpath)
+    if not lines:
+        return HTMLResponse(
+            f"<h2 style='color:red'>File not found or empty:</h2><pre>{path}</pre>",
+            status_code=404,
+        )
+    return templates.TemplateResponse(
+        "file.html",
+        {"request": request, "path": str(fpath), "lines": lines, "total": len(lines)},
+    )
 
 
 @app.get("/api/read")
-def api_read(name: str):
-    if not name.startswith("/"):
-        name = "/" + name
-    path = Path(name)
-    rows = read_jsonl(path)
-    return JSONResponse(rows)
-
-
-@app.get("/api/infer_schema")
-def api_infer_schema(name: str):
-    if not name.startswith("/"):
-        name = "/" + name
-    rows = read_jsonl(Path(name))
-    schema = infer_schema(rows)
-    return JSONResponse(schema)
-
-
-@app.post("/api/save")
-async def api_save(request: Request):
-    """Write JSONL back to disk."""
-    body = await request.json()
-    path = Path(body.get("name"))
-    data = body.get("data")
-    if not path.exists():
-        return JSONResponse({"error": f"File not found: {path}"}, status_code=404)
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            for row in data:
-                json.dump(row, f, ensure_ascii=False)
-                f.write("\n")
-        return JSONResponse({"ok": True, "records": len(data)})
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-
-@app.post("/api/validate")
-def api_validate(name: str):
-    path = Path(name)
-    rows = read_jsonl(path)
-    schema = infer_schema(rows)
-    errors = []
-    for i, row in enumerate(rows):
-        try:
-            js_validate(instance=row, schema=schema)
-        except ValidationError as e:
-            errors.append({"index": i, "error": e.message})
-    return JSONResponse({"ok": not errors, "errors": errors, "schema": schema})
-
-
-@app.get("/download/{path:path}")
-def download(path: str):
-    fpath = Path(path)
-    if not fpath.exists():
+async def read_file(name: str):
+    """Return JSONL contents as JSON."""
+    fpath = BASE_DIR / name
+    print(f">> /api/read {fpath}")
+    lines = load_jsonl(fpath)
+    if lines is None:
         return JSONResponse({"error": "File not found"}, status_code=404)
-    return FileResponse(fpath)
+    return JSONResponse(lines)
+
+
+def infer_schema_name(schema_keys):
+    """Heuristic schema type detection based on field names."""
+    keys = set(k.lower() for k in schema_keys)
+    if {"prompt", "completion"} <= keys:
+        return "OpenAI-SFT Schema"
+    if {"prompt", "response"} <= keys:
+        return "Alpaca-Style Schema"
+    if {"chosen", "rejected"} <= keys:
+        return "Preference (DPO) Schema"
+    if {"system", "messages"} <= keys:
+        return "ChatML / Conversation Schema"
+    if {"input", "output"} <= keys:
+        return "Generic IO Schema"
+    return "Unknown / Custom Schema"
 
 
 @app.get("/api/schema")
-async def get_schema(name: str = Query(...)):
-    import json
-    from collections import Counter, defaultdict
-    from pathlib import Path
-
-    # Normalize absolute path
+async def schema_info(name: str):
+    """Scan a JSONL/JSON file to infer schema and type coverage."""
+    # Ensure full absolute path
     if not name.startswith("/"):
         name = "/" + name
+    fpath = Path(name)
+    print(f">> /api/schema {fpath}")
 
-    file_path = Path(name)
-    if not file_path.exists():
-        return {"error": f"File not found: {name}"}
+    try:
+        with open(fpath, "r", encoding="utf-8") as f:
+            lines = []
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    lines.append(json.loads(line))
+                except json.JSONDecodeError:
+                    # Try to parse as a full JSON array (not JSONL)
+                    f.seek(0)
+                    try:
+                        data = json.load(f)
+                        if isinstance(data, list):
+                            lines = data
+                        else:
+                            lines = [data]
+                    except Exception as e:
+                        return JSONResponse(
+                            {"error": f"JSON parse error: {e}"}, status_code=400
+                        )
+                    break
+    except FileNotFoundError:
+        return JSONResponse({"error": f"File not found: {fpath}"}, status_code=404)
 
-    type_map = defaultdict(Counter)
-    total = 0
+    total = len(lines)
+    if not total:
+        return JSONResponse({"error": f"Empty file: {fpath}"})
 
-    # Read only a limited number of lines
-    with open(file_path, "r", encoding="utf-8") as f:
-        for i, line in enumerate(f):
-            if not line.strip():
-                continue
-            try:
-                obj = json.loads(line)
-            except Exception:
-                continue
-            total += 1
-            for key, val in obj.items():
-                t = type(val).__name__
-                type_map[key][t] += 1
-            if i >= 20:
-                break
+    key_stats = {}
+    for obj in lines:
+        if not isinstance(obj, dict):
+            continue
+        for k, v in obj.items():
+            t = type(v).__name__
+            if k not in key_stats:
+                key_stats[k] = {"types": {}, "count": 0}
+            key_stats[k]["count"] += 1
+            key_stats[k]["types"][t] = key_stats[k]["types"].get(t, 0) + 1
 
-    # Summarize
-    schema = []
-    for key, counts in type_map.items():
-        schema.append({
-            "key": key,
-            "types": dict(counts),
-            "coverage": round(sum(counts.values()) / total * 100, 1),
-        })
+    schema = [
+        {
+            "key": k,
+            "types": info["types"],
+            "coverage": round((info["count"] / total) * 100, 1),
+        }
+        for k, info in key_stats.items()
+    ]
 
-    return {"records_scanned": total, "schema": schema}
-
-
-
-# --- STATIC -------------------------------------------------------------------
-if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    schema_name = infer_schema_name([s["key"] for s in schema])
+    return {
+        "records_scanned": total,
+        "schema_name": schema_name,
+        "schema": schema,
+    }
 
 
-# --- ENTRYPOINT ---------------------------------------------------------------
+# Run with: uvicorn viewer:app --port 8002 --reload
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("viewer:app", host="127.0.0.1", port=8002, reload=True)
 
+    print(">> Starting JSONL Viewer on http://127.0.0.1:8002")
+    uvicorn.run(app, host="127.0.0.1", port=8002)
