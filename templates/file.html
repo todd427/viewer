@@ -1,113 +1,138 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<title>{{ name }}</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-  body { font-family: system-ui, -apple-system, Roboto, sans-serif; background:#0b0d10; color:#e6e6e6; margin:0; }
-  header { display:flex; justify-content:space-between; align-items:center; padding:1rem; background:#111419; border-bottom:1px solid #222; }
-  a { color:#8fd0ff; text-decoration:none; } a:hover{text-decoration:underline;}
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:1rem; padding:1rem;}
-  .card { border-radius:10px; padding:0.8rem; background:#151a20; border:1px solid #222; box-shadow:0 1px 2px #0006; white-space:pre-wrap; }
-  .user { background:#0d2340; border-left:3px solid #4fa3ff;}
-  .assistant { background:#052a20; border-left:3px solid #00d67a;}
-  .unknown { background:#201010; border-left:3px solid #cc4444;}
-  .meta { font-size:0.8em; color:#aaa; margin-bottom:0.3em;}
-  input[type="text"]{width:280px;background:#000;color:#eee;border:1px solid #333;border-radius:4px;padding:0.4rem;}
-  label{color:#aaa;font-size:0.85em;}
-  .toolbar{padding:0.5rem;text-align:center;background:#111;border-top:1px solid #222;}
-  .toolbar select{background:#000;color:#fff;border:1px solid #333;border-radius:4px;padding:0.2rem;}
-</style>
+  <meta charset="UTF-8" />
+  <title>{{ path }}</title>
+  <style>
+    body {
+      background-color: #0e1117;
+      color: #e2e2e2;
+      font-family: "Inter", sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+
+    h1 {
+      color: #f5f5f5;
+      font-size: 1.3em;
+      margin: 0.5em 1em;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      padding: 1em;
+    }
+
+    .schema-box {
+      background-color: #111419;
+      border-radius: 8px;
+      padding: 1em;
+      margin: 0 0 1em 0;
+      color: #ccc;
+      font-family: monospace;
+    }
+
+    .schema-box button {
+      background: #007acc;
+      border: none;
+      color: #fff;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-bottom: 0.5em;
+    }
+
+    .schema-box button:hover {
+      background: #0090ff;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      grid-gap: 10px;
+    }
+
+    .card {
+      background-color: #191d25;
+      border: 1px solid #2d3440;
+      border-radius: 10px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 13px;
+      line-height: 1.4em;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .card:hover {
+      border-color: #3e9ad9;
+      box-shadow: 0 0 8px rgba(62, 154, 217, 0.3);
+    }
+
+    .card-id {
+      color: #7ec0ee;
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+
+    .info-bar {
+      margin: 0.5em 1em;
+      color: #999;
+    }
+
+    a {
+      color: #5ca9f8;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+  </style>
 </head>
 <body>
-<header>
-  <div><a href="/">← files</a></div>
-  <div><strong>{{ name }}</strong></div>
-  <div>
-    <label><input type="checkbox" id="regex"> regex</label>
-    <input type="text" id="search" placeholder="search text or regex">
-    <button onclick="applySearch()">Search</button>
+  <h1>{{ path }}</h1>
+
+  <div class="container">
+
+    <div class="schema-box" id="schemaBox">
+      <button id="schemaBtn">Analyze Schema</button>
+      <div id="schemaResult"></div>
+    </div>
+
+    <div class="info-bar">
+      Total: {{ total }} records
+    </div>
+
+    <div class="grid">
+      {% for i, line in enumerate(lines) %}
+      <div class="card">
+        <div class="card-id">#{{ i }}</div>
+        <div>{{ line | tojson(indent=2) }}</div>
+      </div>
+      {% endfor %}
+    </div>
   </div>
-</header>
-<div id="stats" style="padding:0.8rem;"></div>
-<div class="grid" id="grid"></div>
-<div class="toolbar">
-  <span id="pagination"></span>
-  <select id="pageSize" onchange="renderPage(0)">
-    <option>10</option><option>20</option><option selected>50</option><option>100</option>
-  </select> per page
-</div>
 
-<script>
-const name = {{ name | tojson }};
-let rows=[],filtered=[],page=0;
+  <script>
+    document.getElementById('schemaBtn').addEventListener('click', async () => {
+      const path = window.location.pathname.replace(/^\/view\//, '');
+      const res = await fetch(`/api/schema?name=${encodeURIComponent(path)}`);
+      const data = await res.json();
+      const div = document.getElementById('schemaResult');
 
-async function load(){
-  const res=await fetch(`/api/read?name=${encodeURIComponent(name)}`);
-  rows=await res.json();
-  filtered=rows;
-  document.getElementById('stats').innerHTML=`Total: ${rows.length} records`;
-  renderPage(0);
-}
+      if (data.error) {
+        div.textContent = data.error;
+        return;
+      }
 
-function renderPage(p){
-  page=p;
-  const size=parseInt(document.getElementById('pageSize').value);
-  const start=p*size,end=start+size;
-  const slice=filtered.slice(start,end);
-  const grid=document.getElementById('grid');
-  grid.innerHTML='';
-  for(let i=0;i<slice.length;i++){
-    const rec=slice[i];
-    const card=document.createElement('div');
-    card.className='card '+getRoleClass(rec);
-    card.innerHTML=renderRecord(start+i,rec);
-    grid.appendChild(card);
-  }
-  const pages=Math.ceil(filtered.length/size);
-  let pagetext=`Page ${p+1} / ${pages} `;
-  if(p>0) pagetext+=`<a href="#" onclick="renderPage(${p-1})">« Prev</a> `;
-  if(p<pages-1) pagetext+=`<a href="#" onclick="renderPage(${p+1})">Next »</a>`;
-  document.getElementById('pagination').innerHTML=pagetext;
-}
-
-function getRoleClass(rec){
-  const r=(rec.role||'').toLowerCase();
-  if(r.includes('user'))return'user';
-  if(r.includes('assistant')||r.includes('system'))return'assistant';
-  if(rec.user)return'user';
-  if(rec.assistant||rec.output)return'assistant';
-  return'unknown';
-}
-
-function renderRecord(i,rec){
-  const role=(rec.role||'').toUpperCase();
-  let text='';
-  if(rec.text) text=rec.text;
-  else if(rec.content) text=rec.content;
-  else if(rec.user) text=rec.user;
-  else if(rec.assistant) text=rec.assistant;
-  else if(rec.input||rec.output) text=`IN:\\n${rec.input}\\n\\nOUT:\\n${rec.output}`;
-  else text=JSON.stringify(rec,null,2);
-  return `<div class='meta'>#${i} ${role||''}</div><div>${escapeHTML(text)}</div>`;
-}
-
-function escapeHTML(s){return s?s.toString().replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])):'';}
-
-function applySearch(){
-  const text=document.getElementById('search').value.trim();
-  const regexMode=document.getElementById('regex').checked;
-  if(!text){filtered=rows;renderPage(0);return;}
-  try{
-    const re=regexMode?new RegExp(text,'i'):new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i');
-    filtered=rows.filter(r=>JSON.stringify(r).match(re));
-    document.getElementById('stats').innerHTML=`Filtered: ${filtered.length}/${rows.length}`;
-    renderPage(0);
-  }catch(err){alert("Invalid regex: "+err.message);}
-}
-load();
-</script>
+      let out = `Records scanned: ${data.records_scanned}\n\n`;
+      data.schema.forEach(s => {
+        out += `${s.key.padEnd(20)} ${JSON.stringify(s.types)}  (${s.coverage}%)\n`;
+      });
+      div.textContent = out;
+    });
+  </script>
 </body>
 </html>
-
