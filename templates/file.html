@@ -1,88 +1,248 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>{{ path }}</title>
-  <style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ name }}</title>
+
+<!-- Dependencies -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+
+<style>
     body {
-      background-color: #0e1117;
-      color: #e2e2e2;
-      font-family: "Inter", sans-serif;
-      margin: 0;
-      padding: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background-color: #0e1117;
+        color: #e6edf3;
+        margin: 0;
+        padding: 0;
     }
-    h1 { color:#f5f5f5; font-size:1.3em; margin:0.8em 1em 0.2em 1em; }
-    .container { display:flex; flex-direction:column; padding:1em; }
-    .schema-box {
-      background-color:#111419; border-radius:8px; padding:1em; margin-bottom:1em;
-      color:#ccc; font-family:monospace;
+
+    header {
+        background-color: #161b22;
+        border-bottom: 1px solid #30363d;
+        padding: 1rem 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     }
-    .schema-header { font-weight:bold; font-size:1.1em; color:#7ec0ee; margin-bottom:0.5em; }
-    .schema-table { width:100%; border-collapse:collapse; margin-top:0.5em; }
-    .schema-table th, .schema-table td { border-bottom:1px solid #2d3440; padding:6px 8px; text-align:left; }
-    .schema-table th { color:#aaa; font-weight:normal; }
-    .type-str { color:#9cdcfe; } .type-int { color:#b5cea8; } .type-float { color:#dcdcaa; }
-    .type-list { color:#c586c0; } .type-dict { color:#4ec9b0; }
-    .info-bar { margin:0.5em 1em; color:#999; font-weight:bold; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); grid-gap:10px; }
+
+    h1 {
+        margin: 0;
+        font-size: 1rem;
+        color: #79c0ff;
+    }
+
+    .search-bar {
+        display: flex;
+        align-items: center;
+    }
+
+    .search-bar input {
+        background-color: #0d1117;
+        border: 1px solid #30363d;
+        color: #c9d1d9;
+        border-radius: 6px;
+        padding: 4px 8px;
+        width: 200px;
+    }
+
+    .container {
+        padding: 1rem 2rem;
+    }
+
+    .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 1rem;
+    }
+
     .card {
-      background-color:#191d25; border:1px solid #2d3440; border-radius:10px; padding:10px;
-      font-family:monospace; font-size:13px; line-height:1.4em; white-space:pre-wrap; overflow-wrap:anywhere;
+        background-color: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        padding: 0.8rem 1rem;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
-    .card:hover { border-color:#3e9ad9; box-shadow:0 0 8px rgba(62,154,217,0.3); }
-    .card-id { color:#7ec0ee; font-weight:bold; margin-bottom:6px; }
-  </style>
+
+    .card:hover {
+        border-color: #58a6ff;
+        box-shadow: 0 0 6px rgba(88, 166, 255, 0.3);
+    }
+
+    .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.9rem;
+        margin-bottom: 0.4rem;
+        color: #8b949e;
+    }
+
+    .role {
+        font-weight: bold;
+        font-size: 0.8rem;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        margin-bottom: 0.4rem;
+    }
+
+    .role.user { color: #58a6ff; }
+    .role.assistant { color: #3fb950; }
+    .role.system { color: #f2cc60; }
+
+    .message {
+        background-color: #0d1117;
+        border-radius: 6px;
+        padding: 0.6rem;
+        margin-bottom: 0.4rem;
+        white-space: normal;
+        word-wrap: break-word;
+    }
+
+    .markdown p, .markdown ul, .markdown ol {
+        margin: 0.4rem 0;
+    }
+
+    pre, code {
+        background-color: #161b22;
+        border-radius: 6px;
+        padding: 0.4rem 0.6rem;
+        overflow-x: auto;
+    }
+
+    .pagination {
+        display: flex;
+        justify-content: center;
+        gap: 1rem;
+        padding: 1rem 0;
+        font-size: 0.9rem;
+        color: #8b949e;
+    }
+
+    .pagination button {
+        background: none;
+        border: 1px solid #30363d;
+        color: #c9d1d9;
+        border-radius: 6px;
+        padding: 4px 10px;
+        cursor: pointer;
+    }
+
+    .pagination button:hover {
+        border-color: #58a6ff;
+    }
+</style>
 </head>
 <body>
-  <h1>{{ path }}</h1>
-
-  <div class="container">
-    <div class="schema-box" id="schemaBox">
-      <div class="schema-header" id="schemaHeader">Schema Summary</div>
-      <div id="schemaResult">Analyzing...</div>
+<header>
+    <h1>{{ name }}</h1>
+    <div class="search-bar">
+        <label style="margin-right:6px;">Search:</label>
+        <input id="searchInput" type="text" placeholder="text or regex" oninput="applySearch()">
     </div>
+</header>
 
-    <div class="info-bar" id="recordCount">Total records: {{ total }}</div>
+<div class="container">
+    <div id="meta" style="margin-bottom:1rem;color:#8b949e;">Loading records…</div>
+    <div id="grid" class="grid"></div>
+    <div id="pagination" class="pagination"></div>
+</div>
 
-    <div class="grid">
-      {% for line in lines %}
-      <div class="card">
-        <div class="card-id">#{{ loop.index0 }}</div>
-        <div>{{ line | tojson(indent=2) }}</div>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
+<script>
+const filePath = "{{ name }}";
+let records = [];
+let filtered = [];
+let currentPage = 1;
+const pageSize = 10;
 
-  <script>
-    async function analyzeSchema() {
-      const path = decodeURIComponent(window.location.pathname.replace(/^\/view\//, ''));
-      const res = await fetch(`/api/schema?name=${encodeURIComponent(path)}`);
-      const data = await res.json();
-      const div = document.getElementById('schemaResult');
-      const header = document.getElementById('recordCount');
-      const schemaHeader = document.getElementById('schemaHeader');
-
-      if (data.error) {
-        div.innerHTML = `<span style="color:#f55;">${data.error}</span>`;
+async function loadRecords() {
+    const res = await fetch(`/api/read?name=${encodeURIComponent(filePath)}`);
+    records = await res.json();
+    if (!Array.isArray(records)) {
+        document.getElementById("meta").textContent = "Error: " + (records.error || "Invalid file");
         return;
-      }
+    }
+    filtered = records;
+    document.getElementById("meta").textContent = `Total: ${records.length} records`;
+    renderPage();
+}
 
-      header.textContent = `Total records: ${data.records_scanned}`;
-      schemaHeader.innerHTML = `Schema Summary: <span style="color:#d7ba7d;">${data.schema_name}</span>`;
+function applySearch() {
+    const query = document.getElementById("searchInput").value.trim();
+    if (!query) {
+        filtered = records;
+    } else {
+        const regex = new RegExp(query, "i");
+        filtered = records.filter(r => JSON.stringify(r).match(regex));
+    }
+    currentPage = 1;
+    renderPage();
+}
 
-      let table = `<table class="schema-table">
-        <tr><th>Key</th><th>Types</th><th>Coverage</th></tr>`;
-      data.schema.forEach(s => {
-        const typeNames = Object.keys(s.types)
-          .map(t => `<span class="type-${t}">${t}</span>`).join(', ');
-        table += `<tr><td>${s.key}</td><td>${typeNames}</td><td>${s.coverage}%</td></tr>`;
-      });
-      table += '</table>';
-      div.innerHTML = table;
+function renderPage() {
+    const start = (currentPage - 1) * pageSize;
+    const end = start + pageSize;
+    const slice = filtered.slice(start, end);
+    const grid = document.getElementById("grid");
+    grid.innerHTML = slice.map((r, i) => renderCard(r, start + i)).join("");
+    document.getElementById("pagination").innerHTML = `
+        <button onclick="prevPage()" ${currentPage===1?'disabled':''}>Prev</button>
+        Page ${currentPage} / ${Math.ceil(filtered.length/pageSize)}
+        <button onclick="nextPage()" ${end>=filtered.length?'disabled':''}>Next</button>`;
+    hljs.highlightAll();
+}
+
+function renderCard(record, index) {
+    const parts = [];
+
+    // handle chat-style data
+    if (record.messages) {
+        for (const msg of record.messages) {
+            parts.push(renderMessage(msg.role, msg.content));
+        }
+    } else {
+        if (record.prompt) parts.push(renderMessage("user", record.prompt));
+        if (record.chosen || record.completion) parts.push(renderMessage("assistant", record.chosen || record.completion));
+        if (record.rejected) parts.push(renderMessage("system", record.rejected));
     }
 
-    window.addEventListener('DOMContentLoaded', analyzeSchema);
-  </script>
+    if (parts.length === 0)
+        parts.push(`<pre>${JSON.stringify(record, null, 2)}</pre>`);
+
+    return `
+        <div class="card">
+            <div class="card-header">
+                <div>#${index}</div>
+            </div>
+            ${parts.join("")}
+        </div>`;
+}
+
+function renderMessage(role, text) {
+    if (!text) return "";
+    const html = marked.parse(String(text));
+    return `
+        <div class="role ${role}">${role.toUpperCase()}</div>
+        <div class="message markdown">${html}</div>`;
+}
+
+function nextPage() {
+    if (currentPage * pageSize < filtered.length) {
+        currentPage++;
+        renderPage();
+    }
+}
+
+function prevPage() {
+    if (currentPage > 1) {
+        currentPage--;
+        renderPage();
+    }
+}
+
+loadRecords();
+</script>
 </body>
 </html>
