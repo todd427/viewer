@@ -19,26 +19,11 @@ body {
   overflow-y: auto;
   padding: 10px;
 }
-.main {
-  flex: 1;
-  padding: 20px;
-  overflow-y: auto;
-}
-.folder, .file {
-  margin-left: 14px;
-  cursor: pointer;
-  line-height: 1.6em;
-}
-.folder > span {
-  color: #7fc1ff;
-}
-.folder > span:hover, .file:hover {
-  text-decoration: underline;
-}
-ul {
-  list-style: none;
-  padding-left: 15px;
-}
+.main { flex: 1; padding: 20px; overflow-y: auto; }
+.folder, .file { margin-left: 14px; cursor: pointer; line-height: 1.6em; }
+.folder > span { color: #7fc1ff; }
+.folder > span:hover, .file:hover { text-decoration: underline; }
+ul { list-style: none; padding-left: 15px; }
 </style>
 </head>
 <body>
@@ -46,7 +31,6 @@ ul {
     <h2>Files</h2>
     <div id="tree">Loading...</div>
   </div>
-
   <div class="main">
     <h2>JSONL Editor</h2>
     <p>Select a file to view records.</p>
@@ -54,17 +38,11 @@ ul {
 
 <script>
 async function loadFiles() {
-  const treeDiv = document.getElementById("tree");
-  treeDiv.textContent = "Loading...";
-
   const res = await fetch("/api/files");
   const data = await res.json();
   const files = data.files || [];
-
-  if (!files.length) {
-    treeDiv.textContent = "No JSONL files found.";
-    return;
-  }
+  const treeDiv = document.getElementById("tree");
+  if (!files.length) { treeDiv.textContent = "No JSONL files found."; return; }
 
   const tree = {};
   for (const file of files) {
@@ -77,55 +55,41 @@ async function loadFiles() {
     current[parts[parts.length - 1]] = null;
   }
 
-function buildNode(obj, prefix = "") {
-  const ul = document.createElement("ul");
-  for (const key of Object.keys(obj).sort()) {
-    const li = document.createElement("li");
-    const fullPath = prefix ? `${prefix}/${key}` : key;
+  function buildNode(obj, prefix = "") {
+    const ul = document.createElement("ul");
+    for (const key of Object.keys(obj).sort()) {
+      const li = document.createElement("li");
+      const fullPath = prefix ? `${prefix}/${key}` : key;
 
-    if (obj[key] === null) {
-      li.className = "file";
-      li.textContent = key;
-      // ✅ proper URL and no encodeURIComponent issues
-      li.onclick = () => (window.location = `/view${fullPath.startsWith("/") ? "" : "/"}${fullPath}`);
-    } else {
-      li.className = "folder";
-      const label = document.createElement("span");
-      label.textContent = "▶ " + key;
+      if (obj[key] === null) {
+        li.className = "file";
+        li.textContent = key;
+        li.onclick = () => (window.location = `/view/${fullPath}`);
+      } else {
+        li.className = "folder";
+        const label = document.createElement("span");
+        label.textContent = "▶ " + key;
 
-      const sub = buildNode(obj[key], fullPath);
-      sub.style.display = "none";
+        const sub = buildNode(obj[key], fullPath);
+        sub.style.display = "none";
 
-      label.onclick = () => {
-        const open = sub.style.display === "block";
-        sub.style.display = open ? "none" : "block";
-        label.textContent = (open ? "▶ " : "▼ ") + key;
-      };
+        label.onclick = () => {
+          const open = sub.style.display === "block";
+          sub.style.display = open ? "none" : "block";
+          label.textContent = (open ? "▶ " : "▼ ") + key;
+        };
 
-      li.appendChild(label);
-      li.appendChild(sub);
-    }
-    ul.appendChild(li);
-  }
-  return ul;
-}
-
-  function findPath(node, filename, prefix = "") {
-    for (const key in node) {
-      const next = prefix ? `${prefix}/${key}` : key;
-      if (node[key] === null && key === filename) return next;
-      if (typeof node[key] === "object") {
-        const found = findPath(node[key], filename, next);
-        if (found) return found;
+        li.appendChild(label);
+        li.appendChild(sub);
       }
+      ul.appendChild(li);
     }
-    return null;
+    return ul;
   }
 
   treeDiv.innerHTML = "";
   treeDiv.appendChild(buildNode(tree));
 }
-
 window.addEventListener("DOMContentLoaded", loadFiles);
 </script>
 </body>

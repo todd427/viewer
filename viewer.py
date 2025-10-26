@@ -1,27 +1,34 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 import json
 import os
 
-ROOT_PATH = Path("/")  # start from root
-PROJECT_ROOT = Path("/home/Projects/toddric")
-TEMPLATES_DIR = PROJECT_ROOT / "viewer" / "templates"
+# -------------------------------------------------------------
+# CONFIGURATION
+# -------------------------------------------------------------
+BASE_DIR = Path("/home/Projects/toddric/viewer")
+TEMPLATES_DIR = BASE_DIR / "templates"
 
 app = FastAPI()
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "viewer" / "static")), name="static")
+from fastapi.staticfiles import StaticFiles
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+# Directories we don’t want to traverse from /
 SKIP_DIRS = {
     "/proc", "/sys", "/dev", "/run", "/snap", "/tmp",
     "/lost+found", "/var/lib/docker", "/var/lib/containers"
 }
 
-
-def safe_jsonl_load(path: Path, limit: int = 500):
-    records = []
+# -------------------------------------------------------------
+# HELPERS
+# -------------------------------------------------------------
+def safe_jsonl_load(path: Path, limit: int = 5000):
+    """Load JSONL safely with fallback for broken lines."""
+    out = []
     try:
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
             for i, line in enumerate(f):
@@ -29,80 +36,111 @@ def safe_jsonl_load(path: Path, limit: int = 500):
                 if not line:
                     continue
                 try:
-                    records.append(json.loads(line))
-                except json.JSONDecodeError:
-                    records.append({"raw": line})
+                    out.append(json.loads(line))
+                except Exception:
+                    out.append({"raw": line})
                 if i >= limit:
                     break
     except Exception as e:
-        records.append({"error": str(e)})
-    return records
+        out.append({"error": str(e)})
+    return out
 
 
 def safe_json_load(path: Path):
+    """Load plain JSON safely."""
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
             data = json.load(f)
         return data if isinstance(data, list) else [data]
     except Exception as e:
         return [{"error": str(e)}]
 
 
+def summarize_schema(records):
+    """Generate a readable schema summary."""
+    if not records:
+        return "No records found."
+
+    first = records[0]
+    if isinstance(first, dict):
+        keys = list(first.keys())
+        roles = set()
+        if "messages" in first and isinstance(first["messages"], list):
+            for m in first["messages"]:
+                role = m.get("role")
+                if role:
+                    roles.add(role)
+        text = f"Top-level keys: {', '.join(keys)}"
+        if roles:
+            text += f" | Message roles: {', '.join(sorted(roles))}"
+        return text
+    return f"Sample type: {type(first).__name__}"
+
+
+# -------------------------------------------------------------
+# ROUTES
+# -------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+@app.get("/view/{path:path}", response_class=HTMLResponse)
+async def view_file(request: Request, path: str):
+    """Render the file.html template for a given path."""
+    print(f">> /view/{path}")
+    return templates.TemplateResponse("file.html", {"request": request, "name": f"/{path}"})
+
+
 @app.get("/api/files")
 async def api_files():
-    exts = {".json", ".jsonl"}
+    """Recursively list all JSON and JSONL files starting at root, skipping system dirs."""
     files = []
-
-    for root, dirs, filenames in os.walk(ROOT_PATH):
+    for root, dirs, names in os.walk("/", topdown=True):
         dirs[:] = [d for d in dirs if os.path.join(root, d) not in SKIP_DIRS]
-        try:
-            for name in filenames:
-                if Path(name).suffix.lower() in exts:
-                    full = Path(root) / name
-                    files.append(str(full))
-        except (PermissionError, OSError):
-            continue
-
+        for n in names:
+            if n.endswith(".jsonl") or n.endswith(".json"):
+                files.append(os.path.join(root, n))
     return {"files": files}
 
 
 @app.get("/api/read")
 async def api_read(name: str):
-    fpath = Path("/") / name.lstrip("/")
-    if not fpath.exists():
-        return JSONResponse({"error": f"File not found: {fpath}"}, status_code=404)
-    if fpath.is_dir():
-        return {"directory": str(fpath), "items": [str(p.name) for p in fpath.iterdir()]}
+    """Return file contents as a JSON array (no hang, guaranteed)."""
+    path = Path("/") / name.lstrip("/")
+    print(f">> /api/read received: {path}")
 
-    # Read based on extension
-    if fpath.suffix == ".jsonl":
-        data = safe_jsonl_load(fpath)
-    elif fpath.suffix == ".json":
-        data = safe_json_load(fpath)
+    if not path.exists():
+        return [{"error": f"File not found: {path}"}]
+
+    if path.is_dir():
+        return [{"directory": str(path), "items": [p.name for p in path.iterdir()]}]
+
+    # Load the file
+    if path.suffix == ".jsonl":
+        data = safe_jsonl_load(path)
+    elif path.suffix == ".json":
+        data = safe_json_load(path)
     else:
-        return JSONResponse({"error": f"Unsupported file type: {fpath.suffix}"}, status_code=400)
+        data = [{"error": f"Unsupported extension: {path.suffix}"}]
 
-    # Return only the record list so file.html gets what it expects
-    return JSONResponse(data)
+    summary = summarize_schema(data)
+    return [{"_schema_summary": summary}, *data]
 
-
-@app.get("/view/{path:path}", response_class=HTMLResponse)
-async def view_file(request: Request, path: str):
-    fpath = Path("/") / path
-    if not fpath.exists():
-        return HTMLResponse(
-            f"<h2 style='color:red'>File not found:</h2><pre>{fpath}</pre>",
-            status_code=404,
-        )
-    return templates.TemplateResponse("file.html", {"request": request, "name": str(fpath)})
-
-
+# -------------------------------------------------------------
+# MAIN ENTRY (for development)
+# -------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-    print(">> JSONL Viewer running from /")
-    uvicorn.run(app, host="127.0.0.1", port=8002)
+    print("Viewer running on http://127.0.0.1:8002")
+    uvicorn.run(
+        "viewer:app",
+        host="127.0.0.1",
+        port=8002,
+        reload=True,
+        reload_dirs=[
+            "/home/Projects/toddric/viewer",
+            "/home/Projects/toddric/viewer/templates"
+        ]
+    )
+
