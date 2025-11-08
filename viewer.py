@@ -8,7 +8,7 @@ import os
 # -------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------
-BASE_DIR = Path("/home/Projects/toddric/viewer")
+BASE_DIR = Path("/home/todd/viewer")
 TEMPLATES_DIR = BASE_DIR / "templates"
 
 app = FastAPI()

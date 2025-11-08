@@ -2,51 +2,62 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>JSONL Viewer</title>
+<title>JSON/JSONL Viewer</title>
+<link rel="stylesheet" href="/static/style.css" />
 <style>
-body {
-  background-color: #0e0f12;
-  color: #ddd;
-  font-family: "Inter", sans-serif;
-  margin: 0;
-  display: flex;
-  height: 100vh;
-}
-.sidebar {
-  width: 26%;
-  background-color: #151821;
-  border-right: 1px solid #222;
-  overflow-y: auto;
-  padding: 10px;
-}
-.main { flex: 1; padding: 20px; overflow-y: auto; }
-.folder, .file { margin-left: 14px; cursor: pointer; line-height: 1.6em; }
-.folder > span { color: #7fc1ff; }
-.folder > span:hover, .file:hover { text-decoration: underline; }
-ul { list-style: none; padding-left: 15px; }
+  body { background-color: #0e0f12; color: #ddd; font-family: "Inter", sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; }
+  .topbar { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #222; background:#0e0f12; }
+  .host-badge { font-size:12px; color:#9aa0a6; }
+  .wrap { display:flex; flex:1 1 auto; min-height:0; }
+  .sidebar { width: 26%; background-color: #151821; border-right: 1px solid #222; overflow-y: auto; padding: 10px; }
+  .main { flex: 1; padding: 20px; overflow-y: auto; }
+  .folder, .file { margin-left: 14px; cursor: pointer; line-height: 1.6em; }
+  .folder > span { color: #7fc1ff; }
+  .folder > span:hover, .file:hover { text-decoration: underline; }
+  ul { list-style: none; padding-left: 15px; }
+  .crumbs { font-size: 12px; color:#9aa0a6; padding: 6px 14px; border-bottom:1px solid #111827; }
 </style>
 </head>
 <body>
-  <div class="sidebar">
-    <h2>Files</h2>
-    <div id="tree">Loading...</div>
+  <div class="topbar">
+    <div><strong>JSON/JSONL Viewer</strong></div>
+    <div class="host-badge" id="hostBadge">Loading host…</div>
   </div>
-  <div class="main">
-    <h2>JSONL Editor</h2>
-    <p>Select a file to view records.</p>
+
+  <div class="crumbs"><span id="crumbs">Roots</span></div>
+
+  <div class="wrap">
+    <div class="sidebar">
+      <h2>Files</h2>
+      <div id="tree">Loading...</div>
+    </div>
+    <div class="main">
+      <h2>JSONL Editor</h2>
+      <p>Select a file to view records.</p>
+    </div>
   </div>
 
 <script>
+async function loadHost() {
+  try {
+    const res = await fetch('/api/host');
+    const data = await res.json();
+    document.getElementById('hostBadge').textContent = data.hostname + (data.uname ? ' — '+data.uname : '');
+  } catch {
+    document.getElementById('hostBadge').textContent = 'Host: (unknown)';
+  }
+}
+
 async function loadFiles() {
-  const res = await fetch("/api/files");
+  const res = await fetch("/api/files?ext=json,jsonl");
   const data = await res.json();
   const files = data.files || [];
   const treeDiv = document.getElementById("tree");
-  if (!files.length) { treeDiv.textContent = "No JSONL files found."; return; }
+  if (!files.length) { treeDiv.textContent = "No JSON/JSONL files found."; return; }
 
   const tree = {};
   for (const file of files) {
-    const parts = file.split("/");
+    const parts = file.split("/").filter(Boolean);
     let current = tree;
     for (const part of parts.slice(0, -1)) {
       current[part] = current[part] || {};
@@ -64,6 +75,7 @@ async function loadFiles() {
       if (obj[key] === null) {
         li.className = "file";
         li.textContent = key;
+        li.title = fullPath;
         li.onclick = () => (window.location = `/view/${fullPath}`);
       } else {
         li.className = "folder";
@@ -77,6 +89,7 @@ async function loadFiles() {
           const open = sub.style.display === "block";
           sub.style.display = open ? "none" : "block";
           label.textContent = (open ? "▶ " : "▼ ") + key;
+          document.getElementById('crumbs').textContent = open ? 'Roots' : fullPath;
         };
 
         li.appendChild(label);
@@ -90,7 +103,11 @@ async function loadFiles() {
   treeDiv.innerHTML = "";
   treeDiv.appendChild(buildNode(tree));
 }
-window.addEventListener("DOMContentLoaded", loadFiles);
+
+window.addEventListener("DOMContentLoaded", () => {
+  loadHost();
+  loadFiles();
+});
 </script>
 </body>
 </html>

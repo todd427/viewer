@@ -5,47 +5,49 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ name }}</title>
 
+<link rel="stylesheet" href="/static/style.css" />
+
 <!-- Markdown + Syntax highlighting -->
 <script src="/static/js/marked.min.js"></script>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 
 <style>
-body { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background-color: #0e1117; color: #e6edf3; margin: 0; padding: 0; }
-header {
-  background-color: #161b22; border-bottom: 1px solid #30363d;
-  padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center;
-}
-h1 { margin: 0; font-size: 1rem; color: #79c0ff; }
-.container { padding: 1rem 2rem; }
-.grid { display: flex; flex-direction: column; gap: 1.2rem; }
-.card { background-color: #161b22; border: 1px solid #30363d; border-radius: 12px;
-  padding: 1rem 1.25rem; transition: all 0.2s ease; box-shadow: 0 0 6px rgba(0,0,0,0.25); }
-.card:nth-child(even) { background-color: #1b1f27; }
-.card:hover { border-color: #58a6ff; box-shadow: 0 0 12px rgba(88,166,255,0.3); }
-.card-header { font-size: 0.85rem; color: #8b949e; margin-bottom: 0.5rem; }
-
-.role { font-weight: 600; text-transform: uppercase; font-size: 0.75rem;
-  letter-spacing: 0.05em; margin: 0.4rem 0; }
-.role.user { color: #58a6ff; } .role.assistant { color: #3fb950; } .role.system { color: #f2cc60; }
-
-.message { background-color: #0d1117; border-radius: 8px; padding: 0.75rem;
-  line-height: 1.5; word-wrap: break-word; overflow-x: auto; margin-bottom: 0.5rem; }
-.message code, pre { background: #1c2128; padding: 0.25rem 0.4rem; border-radius: 6px;
-  font-family: "JetBrains Mono", monospace; }
-.message p { margin: 0.4rem 0; }
-
-details { background-color: #11151d; border-radius: 8px; margin-top: 0.5rem; padding: 0.5rem 0.75rem; }
-summary { color: #58a6ff; cursor: pointer; font-weight: 600; outline: none; }
-.pagination { display: flex; justify-content: center; gap: 1rem; padding: 1rem 0; font-size: 0.9rem; color: #8b949e; }
+  body { font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background-color: #0e1117; color: #e6edf3; margin: 0; padding: 0; }
+  .topbar { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #30363d; background:#0e1117; }
+  .host-badge { font-size:12px; color:#8b949e; }
+  header { background-color: #161b22; border-bottom: 1px solid #30363d; padding: 0.6rem 1rem; display: flex; justify-content: space-between; align-items: center; }
+  h1 { margin: 0; font-size: 1rem; color: #79c0ff; }
+  .container { padding: 1rem 2rem; }
+  .grid { display: flex; flex-direction: column; gap: 1.2rem; }
+  .card { background-color: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 1rem 1.25rem; transition: all 0.2s ease; box-shadow: 0 0 6px rgba(0,0,0,0.25); }
+  .card:nth-child(even) { background-color: #1b1f27; }
+  .card:hover { border-color: #58a6ff; box-shadow: 0 0 12px rgba(88,166,255,0.3); }
+  .card-header { font-size: 0.85rem; color: #8b949e; margin-bottom: 0.5rem; }
+  .role { font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; margin: 0.4rem 0; }
+  .role.user { color: #58a6ff; } .role.assistant { color: #3fb950; } .role.system { color: #f2cc60; }
+  .message { background-color: #0d1117; border-radius: 8px; padding: 0.75rem; line-height: 1.5; word-wrap: break-word; overflow-x: auto; margin-bottom: 0.5rem; }
+  .message code, pre { background: #1c2128; padding: 0.25rem 0.4rem; border-radius: 6px; font-family: "JetBrains Mono", monospace; }
+  .message p { margin: 0.4rem 0; }
+  details { background-color: #11151d; border-radius: 8px; margin-top: 0.5rem; padding: 0.5rem 0.75rem; }
+  summary { color: #58a6ff; cursor: pointer; font-weight: 600; outline: none; }
+  .pagination { display: flex; justify-content: center; gap: 1rem; padding: 1rem 0; font-size: 0.9rem; color: #8b949e; }
+  .actions { display:flex; gap:8px; align-items:center; }
 </style>
 </head>
 
 <body>
+<div class="topbar">
+  <div class="actions">
+    <button onclick="history.back()" title="Go back">← Back</button>
+    <button id="upBtn" title="Go up one level">↑ Up</button>
+    <button onclick="window.location='/'" title="Go to roots">⌂ Home</button>
+  </div>
+  <div class="host-badge" id="hostBadge">Loading host…</div>
+</div>
+
 <header>
-  <h1>{{ name }}</h1>
+  <h1 id="title">{{ name }}</h1>
   <div class="search-bar">
     <label style="margin-right:6px;">Search:</label>
     <input id="searchInput" type="text" placeholder="text or regex" oninput="applySearch()">
@@ -53,14 +55,14 @@ summary { color: #58a6ff; cursor: pointer; font-weight: 600; outline: none; }
 </header>
 
 <div class="container">
-  <div id="meta" style="margin-bottom:1rem;color:#8b949e;">Loading records…</div>
+  <div class="breadcrumbs" id="breadcrumbs"></div>
+  <div id="meta" style="margin:8px 0 12px 0;color:#8b949e;">Loading records…</div>
   <div id="grid" class="grid"></div>
   <div id="pagination" class="pagination"></div>
 </div>
 
 <script>
-const filePath = "{{ name.lstrip('/') }}"; // correct path
-
+const filePath = "{{ name.lstrip('/') }}"; // server-provided
 let records = [], filtered = [];
 let currentPage = 1;
 const pageSize = 10;
@@ -72,6 +74,65 @@ marked.setOptions({
   }
 });
 
+async function loadHost() {
+  try {
+    const res = await fetch('/api/host');
+    const data = await res.json();
+    document.getElementById('hostBadge').textContent = data.hostname + (data.uname ? ' — '+data.uname : '');
+  } catch {
+    document.getElementById('hostBadge').textContent = 'Host: (unknown)';
+  }
+}
+
+async function goUp() {
+  try {
+    const res = await fetch(`/api/parent?path=${encodeURIComponent('/' + filePath)}`);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const data = await res.json();
+    if (data.parent) {
+      window.location = '/view/' + data.parent.replace(/^\//,'');
+    } else {
+      window.location = '/';
+    }
+  } catch (e) {
+    console.error(e);
+    window.location = '/';
+  }
+}
+document.getElementById('upBtn').addEventListener('click', goUp);
+
+/* ---------- Breadcrumbs ---------- */
+async function loadBreadcrumbs(absPath) {
+  try {
+    const res = await fetch(`/api/breadcrumbs?path=${encodeURIComponent(absPath)}`);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const data = await res.json();
+    renderBreadcrumbs(data.crumbs || []);
+  } catch (e) {
+    document.getElementById('breadcrumbs').textContent = '/' + filePath;
+  }
+}
+function renderBreadcrumbs(crumbs) {
+  const el = document.getElementById('breadcrumbs');
+  if (!crumbs.length) { el.textContent = '/' + filePath; return; }
+  const parts = [];
+  crumbs.forEach((c, i) => {
+    const isLast = (i === crumbs.length - 1);
+    if (isLast) {
+      parts.push(`<span>${escapeHtml(c.label)}</span>`);
+    } else {
+      const href = `/view/${c.path.replace(/^\//,'')}`;
+      parts.push(`<a href="${href}" title="${c.path}">${escapeHtml(c.label)}</a>`);
+      parts.push(`<span class="sep">›</span>`);
+    }
+  });
+  el.innerHTML = parts.join('');
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+}
+
+/* ---------- Records load & render ---------- */
 async function loadRecords() {
   try {
     const res = await fetch(`/api/read?name=${encodeURIComponent(filePath)}`);
@@ -144,7 +205,9 @@ function renderMessage(role, text) {
 function nextPage(){ if(currentPage*pageSize<filtered.length){currentPage++;renderPage();}}
 function prevPage(){ if(currentPage>1){currentPage--;renderPage();}}
 
+loadHost();
 loadRecords();
+loadBreadcrumbs('/' + filePath);
 </script>
 </body>
 </html>
