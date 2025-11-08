@@ -9,12 +9,11 @@
   .topbar { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #222; background:#0e0f12; }
   .host-badge { font-size:12px; color:#9aa0a6; }
   .wrap { display:flex; flex:1 1 auto; min-height:0; }
-  .sidebar { width: 26%; background-color: #151821; border-right: 1px solid #222; overflow-y: auto; padding: 10px; }
+  .sidebar { width: 28%; background-color: #151821; border-right: 1px solid #222; overflow-y: auto; padding: 10px; }
   .main { flex: 1; padding: 20px; overflow-y: auto; }
-  .folder, .file { margin-left: 14px; cursor: pointer; line-height: 1.6em; }
-  .folder > span { color: #7fc1ff; }
-  .folder > span:hover, .file:hover { text-decoration: underline; }
-  ul { list-style: none; padding-left: 15px; }
+  .folder, .file { margin-left: 8px; cursor: pointer; line-height: 1.6em; }
+  .twisty { display:inline-block; width: 1.2em; color:#7fc1ff; }
+  ul { list-style: none; padding-left: 12px; }
   .crumbs { font-size: 12px; color:#9aa0a6; padding: 6px 14px; border-bottom:1px solid #111827; }
 </style>
 </head>
@@ -29,15 +28,18 @@
   <div class="wrap">
     <div class="sidebar">
       <h2>Files</h2>
+      <div style="font-size:12px; color:#9aa0a6; margin-bottom:8px;">Showing *.json / *.jsonl</div>
       <div id="tree">Loading...</div>
     </div>
     <div class="main">
       <h2>JSONL Editor</h2>
-      <p>Select a file to view records.</p>
+      <p>Select a file to view records. Folders expand lazily.</p>
     </div>
   </div>
 
 <script>
+function q(name){ return new URLSearchParams(location.search).get(name); }
+
 async function loadHost() {
   try {
     const res = await fetch('/api/host');
@@ -48,66 +50,108 @@ async function loadHost() {
   }
 }
 
-async function loadFiles() {
-  const res = await fetch("/api/files?ext=json,jsonl");
-  const data = await res.json();
-  const files = data.files || [];
-  const treeDiv = document.getElementById("tree");
-  if (!files.length) { treeDiv.textContent = "No JSON/JSONL files found."; return; }
+async function apiTree(path=null) {
+  const url = path ? `/api/tree?path=${encodeURIComponent(path)}&ext=json,jsonl`
+                   : `/api/tree?ext=json,jsonl`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
 
-  const tree = {};
-  for (const file of files) {
-    const parts = file.split("/").filter(Boolean);
-    let current = tree;
-    for (const part of parts.slice(0, -1)) {
-      current[part] = current[part] || {};
-      current = current[part];
-    }
-    current[parts[parts.length - 1]] = null;
-  }
+function makeFolder(label, fullPath, loadChildren) {
+  const li = document.createElement('li');
+  li.className = 'folder';
+  const twist = document.createElement('span');
+  twist.className = 'twisty';
+  twist.textContent = '▶';
+  const name = document.createElement('span');
+  name.textContent = label;
+  name.style.color = '#7fc1ff';
+  const sub = document.createElement('ul');
+  sub.style.display = 'none';
+  let loaded = false;
 
-  function buildNode(obj, prefix = "") {
-    const ul = document.createElement("ul");
-    for (const key of Object.keys(obj).sort()) {
-      const li = document.createElement("li");
-      const fullPath = prefix ? `${prefix}/${key}` : key;
-
-      if (obj[key] === null) {
-        li.className = "file";
-        li.textContent = key;
-        li.title = fullPath;
-        li.onclick = () => (window.location = `/view/${fullPath}`);
-      } else {
-        li.className = "folder";
-        const label = document.createElement("span");
-        label.textContent = "▶ " + key;
-
-        const sub = buildNode(obj[key], fullPath);
-        sub.style.display = "none";
-
-        label.onclick = () => {
-          const open = sub.style.display === "block";
-          sub.style.display = open ? "none" : "block";
-          label.textContent = (open ? "▶ " : "▼ ") + key;
-          document.getElementById('crumbs').textContent = open ? 'Roots' : fullPath;
-        };
-
-        li.appendChild(label);
-        li.appendChild(sub);
+  const toggle = async () => {
+    const open = sub.style.display === 'block';
+    if (open) {
+      sub.style.display = 'none';
+      twist.textContent = '▶';
+      document.getElementById('crumbs').textContent = 'Roots';
+    } else {
+      if (!loaded) {
+        const children = await loadChildren();
+        sub.innerHTML = '';
+        children.forEach(n => sub.appendChild(n));
+        loaded = true;
       }
-      ul.appendChild(li);
+      sub.style.display = 'block';
+      twist.textContent = '▼';
+      document.getElementById('crumbs').textContent = fullPath;
     }
-    return ul;
-  }
+  };
+  twist.onclick = toggle;
+  name.onclick = toggle;
 
-  treeDiv.innerHTML = "";
-  treeDiv.appendChild(buildNode(tree));
+  li.appendChild(twist);
+  li.appendChild(name);
+  li.appendChild(sub);
+  return li;
+}
+
+function makeFile(label, fullPath) {
+  const li = document.createElement('li');
+  li.className = 'file';
+  li.textContent = label;
+  li.title = fullPath;
+  li.onclick = () => (window.location = `/view/${fullPath.replace(/^\//,'')}`);
+  return li;
+}
+
+async function buildChildren(dirPath) {
+  const data = await apiTree(dirPath);
+  if (!data.nodes) return [];
+  return data.nodes.map(node => {
+    if (node.type === 'dir') {
+      return makeFolder(node.name, node.path, () => buildChildren(node.path));
+    }
+    return makeFile(node.name, node.path);
+  });
+}
+
+async function loadTree() {
+  const treeDiv = document.getElementById('tree');
+  const start = q('path');
+
+  if (!start) {
+    // Show configured roots (default "/")
+    const data = await apiTree(null);
+    if (data.roots && data.roots.length) {
+      const ul = document.createElement('ul');
+      for (const r of data.roots) {
+        const node = makeFolder(r, r, () => buildChildren(r));
+        ul.appendChild(node);
+      }
+      treeDiv.innerHTML = '';
+      treeDiv.appendChild(ul);
+    } else {
+      treeDiv.textContent = "No roots visible.";
+    }
+  } else {
+    // Directly open provided directory
+    const ul = document.createElement('ul');
+    const children = await buildChildren(start);
+    children.forEach(n => ul.appendChild(n));
+    treeDiv.innerHTML = '';
+    treeDiv.appendChild(ul);
+    document.getElementById('crumbs').textContent = start;
+  }
 }
 
 window.addEventListener("DOMContentLoaded", () => {
   loadHost();
-  loadFiles();
+  loadTree();
 });
 </script>
 </body>
 </html>
+

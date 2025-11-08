@@ -6,8 +6,6 @@
 <title>{{ name }}</title>
 
 <link rel="stylesheet" href="/static/style.css" />
-
-<!-- Markdown + Syntax highlighting -->
 <script src="/static/js/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
@@ -46,6 +44,10 @@
   <div class="host-badge" id="hostBadge">Loading host…</div>
 </div>
 
+<div class="container" style="padding-bottom:0;">
+  <div class="breadcrumbs" id="breadcrumbs"></div>
+</div>
+
 <header>
   <h1 id="title">{{ name }}</h1>
   <div class="search-bar">
@@ -55,14 +57,13 @@
 </header>
 
 <div class="container">
-  <div class="breadcrumbs" id="breadcrumbs"></div>
   <div id="meta" style="margin:8px 0 12px 0;color:#8b949e;">Loading records…</div>
   <div id="grid" class="grid"></div>
   <div id="pagination" class="pagination"></div>
 </div>
 
 <script>
-const filePath = "{{ name.lstrip('/') }}"; // server-provided
+const filePath = "{{ name.lstrip('/') }}";
 let records = [], filtered = [];
 let currentPage = 1;
 const pageSize = 10;
@@ -90,7 +91,7 @@ async function goUp() {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     const data = await res.json();
     if (data.parent) {
-      window.location = '/view/' + data.parent.replace(/^\//,'');
+      window.location = '/browse?path=' + encodeURIComponent(data.parent);
     } else {
       window.location = '/';
     }
@@ -101,7 +102,7 @@ async function goUp() {
 }
 document.getElementById('upBtn').addEventListener('click', goUp);
 
-/* ---------- Breadcrumbs ---------- */
+/* ---------- Breadcrumbs (link to /browse) ---------- */
 async function loadBreadcrumbs(absPath) {
   try {
     const res = await fetch(`/api/breadcrumbs?path=${encodeURIComponent(absPath)}`);
@@ -118,10 +119,10 @@ function renderBreadcrumbs(crumbs) {
   const parts = [];
   crumbs.forEach((c, i) => {
     const isLast = (i === crumbs.length - 1);
+    const href = `/browse?path=${encodeURIComponent(c.path)}`;
     if (isLast) {
       parts.push(`<span>${escapeHtml(c.label)}</span>`);
     } else {
-      const href = `/view/${c.path.replace(/^\//,'')}`;
       parts.push(`<a href="${href}" title="${c.path}">${escapeHtml(c.label)}</a>`);
       parts.push(`<span class="sep">›</span>`);
     }
@@ -132,7 +133,7 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
 }
 
-/* ---------- Records load & render ---------- */
+/* ---------- Records ---------- */
 async function loadRecords() {
   try {
     const res = await fetch(`/api/read?name=${encodeURIComponent(filePath)}`);
@@ -211,3 +212,4 @@ loadBreadcrumbs('/' + filePath);
 </script>
 </body>
 </html>
+
